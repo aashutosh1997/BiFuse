@@ -12,6 +12,7 @@ from torch.utils import data
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import Utils
+import utils
 
 parser = argparse.ArgumentParser(description='BiFuse script for 360 depth prediction!',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -45,6 +46,7 @@ def Run(loader, model, crop):
     pbar.set_description('Validation process')
     gpu_num = torch.cuda.device_count()
     os.system('mkdir -p My_Test_Result')
+    os.system('mkdir -p My_Test_Result/ply')
 
     CE = Utils.CETransform()
     count = 0
@@ -71,15 +73,47 @@ def Run(loader, model, crop):
 
                 big = np.concatenate([cat_rgb[upper:lower], white, cat_dep[upper:lower]], axis=0)
                 only_dep = cat_dep[upper:lower]
-                imwrite('My_Test_Result/Combine%.3d.jpg'%count, (big*255).astype(np.uint8))
-                imwrite('My_Test_Result/Depth%.3d.jpg'%count, (only_dep*255).astype(np.uint8))
+                #imwrite('My_Test_Result/Combine%.3d.jpg'%count, (big*255).astype(np.uint8))
+                imwrite('My_Test_Result/%.5d.jpg'%count, (only_dep*255).astype(np.uint8))
                 d = {
                             'RGB': cat_rgb,
                             'depth': d_tmp[i, 0, ...]
                         }
                 np.save('My_Test_Result/Data%.3d.npy'%count, d)
+                SavePly('My_Test_Result/ply/%.5d.ply'%count,d)
 
                 count += 1
+
+def SavePly (name,data):
+    RGB = data['RGB']
+    depth = data['depth']
+    grid = utils.SphereGrid(*depth.shape)
+    
+    aaa = 85
+    bbb = 435
+
+    pts = depth[..., None] * grid
+    
+    pts = pts[aaa:bbb, ...].reshape([-1, 3])
+    RGB = RGB[aaa:bbb, ...].reshape([-1, 3])
+    header = ['ply\r\n',
+            'format ascii 1.0\r\n',
+            'element vertex '+str(len(RGB))+'\r\n',
+            'property float x\r\n',
+            'property float y\r\n',
+            'property float z\r\n',
+            'property uchar red\r\n',
+            'property uchar green\r\n',
+            'property uchar blue\r\n',
+            'element face 0\r\n',
+            'property list uchar int vertex_index\r\n',
+            'end_header\r\n']
+    f = open(name,'w+')
+    for s in header:
+        f.write(s)
+    for i in range(len(pts)):
+        f.write('%f %f %f %d %d %d\r\n'%(pts[i,0],pts[i,1],pts[i,2],255*RGB[i,0],255*RGB[i,1],255*RGB[i,2]))
+    f.close()
 
 def main():
     test_img = MyData(args.path)
